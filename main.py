@@ -240,6 +240,16 @@ def main():
     print("所有動畫已生成完成！")
     print("="*60 + "\n")
     
+    # 6. 導出數據供 Web 視覺化使用
+    print("正在導出數據供 Web 視覺化...")
+    try:
+        from export_data import export_simulation_data
+        export_simulation_data(results, satellites, uav_swarm, ground_terminals,
+                             output_file='simulation_data.json')
+        print("  ✓ 數據已導出，可用於 Web 視覺化")
+    except Exception as e:
+        print(f"  ⚠ 數據導出失敗: {e}")
+    
     # 顯示圖表
     try:
         import matplotlib.pyplot as plt

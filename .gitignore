@@ -38,6 +38,8 @@ env/
 *.pdf
 *.csv
 *.log
+*.gif
+simulation_data.json
 
 # OS
 .DS_Store
