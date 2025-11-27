@@ -69,16 +69,17 @@ class Simulation:
             # 假設所有衛星參數相同，取第一個
             satellite_params = satellite_params_list[0] if satellite_params_list else None
             
-            # --- 蜂群策略 (優化) ---
-            if enable_optimization and step_idx % 5 == 0:  # 每 5 步優化一次
-                jammed_count = self.uav_swarm.update_formation(
-                    self.ground_terminals,
-                    satellite_positions,
-                    satellite_params,
-                    self.channel
-                )
-                if step_idx % 10 == 0:
-                    print(f"時間 {current_time:.0f}s: {jammed_count}/{len(self.ground_terminals)} 個終端被阻斷")
+            # --- 蜂群策略 (移動和優化) ---
+            # 每步都更新位置（飛行或優化）
+            jammed_count = self.uav_swarm.update_formation(
+                self.ground_terminals,
+                satellite_positions,
+                satellite_params,
+                self.channel,
+                dt=self.dt
+            )
+            if step_idx % 10 == 0:
+                print(f"時間 {current_time:.0f}s: {jammed_count}/{len(self.ground_terminals)} 個終端被阻斷")
             
             # --- 鏈路計算 ---
             step_results = {

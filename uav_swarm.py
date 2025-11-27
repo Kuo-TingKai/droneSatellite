@@ -12,21 +12,35 @@ class UAVSwarm:
     """無人機蜂群類別"""
     
     def __init__(self, num_uavs, initial_lat_range=(22.0, 25.0),
-                 initial_lon_range=(119.0, 122.0), deployment_pattern='grid'):
+                 initial_lon_range=(119.0, 122.0), deployment_pattern='grid',
+                 target_region=None):
         """
         初始化無人機蜂群
         Initialize UAV swarm
         
         :param num_uavs: 無人機數量
-        :param initial_lat_range: 初始緯度範圍 (台灣附近)
-        :param initial_lon_range: 初始經度範圍 (台灣附近)
+        :param initial_lat_range: 初始緯度範圍 (起飛區域)
+        :param initial_lon_range: 初始經度範圍 (起飛區域)
         :param deployment_pattern: 部署模式 ('grid', 'random', 'line')
+        :param target_region: 目標區域 (lat_range, lon_range)，如果為 None 則自動計算
         """
         self.num_uavs = num_uavs
         
         # 狀態：每架無人機的 (緯度, 經度) - 簡化優化空間
         lat_min, lat_max = initial_lat_range
         lon_min, lon_max = initial_lon_range
+        
+        # 目標區域（台灣本島）
+        if target_region is None:
+            # 台灣本島大致範圍
+            self.target_lat_range = (22.0, 25.3)
+            self.target_lon_range = (119.3, 122.0)
+        else:
+            self.target_lat_range, self.target_lon_range = target_region
+        
+        # 計算目標中心點
+        self.target_center_lat = (self.target_lat_range[0] + self.target_lat_range[1]) / 2
+        self.target_center_lon = (self.target_lon_range[0] + self.target_lon_range[1]) / 2
         
         if deployment_pattern == 'grid':
             # 網格部署：在台灣海峽形成規律陣型
@@ -69,6 +83,11 @@ class UAVSwarm:
         
         # 輔助：存儲無人機在 ECEF 座標下的位置
         self.uav_positions_ecef = self._geo_to_ecef(self.uav_positions_geo)
+        
+        # 飛行速度（度/秒，約 200-300 km/h 的無人機）
+        # 在 20km 高度，1 度緯度約 111 km，1 度經度約 111*cos(lat) km
+        # 假設速度 250 km/h ≈ 0.069 km/s，約 0.0006 度/秒
+        self.speed_deg_per_sec = 0.0006  # 約 250 km/h
     
     def _geo_to_ecef(self, geo_coords):
         """將地理座標 (lat, lon) 轉換為 ECEF 座標 (x, y, z)"""
@@ -87,55 +106,71 @@ class UAVSwarm:
         return UAV_JAM_POWER_DBW, UAV_JAM_GAIN_DB, UAV_FREQ
     
     def update_formation(self, ground_terminals, satellite_positions,
-                         satellite_params, channel_module):
+                         satellite_params, channel_module, dt=60.0):
         """
-        根據當前環境，使用簡化優化策略調整無人機的位置，以最大化干擾效果
-        Update UAV formation using simplified optimization strategy
+        更新無人機位置：從起飛點飛向目標區域，然後在目標區域內優化位置
+        Update UAV positions: fly from launch point to target area, then optimize
         
         :param ground_terminals: 地面終端列表
         :param satellite_positions: 衛星位置列表 (ECEF)
         :param satellite_params: 衛星參數元組 (tx_power, tx_gain, freq)
         :param channel_module: Channel 模塊實例
+        :param dt: 時間步長 (秒)
         :return: 被阻斷的地面終端數量
         """
-        # 1. 計算當前適應度 (被阻斷的終端數量)
-        current_fitness = self._calculate_fitness(
+        # 計算移動距離（度）
+        move_distance = self.speed_deg_per_sec * dt
+        
+        new_geo_positions = self.uav_positions_geo.copy()
+        
+        for i in range(self.num_uavs):
+            current_lat, current_lon = self.uav_positions_geo[i]
+            
+            # 計算到目標中心的距離和方向
+            dlat = self.target_center_lat - current_lat
+            dlon = self.target_center_lon - current_lon
+            distance = np.sqrt(dlat**2 + dlon**2)
+            
+            # 判斷是否已到達目標區域
+            in_target_lat = (self.target_lat_range[0] <= current_lat <= self.target_lat_range[1])
+            in_target_lon = (self.target_lon_range[0] <= current_lon <= self.target_lon_range[1])
+            in_target = in_target_lat and in_target_lon
+            
+            if not in_target and distance > move_distance:
+                # 尚未到達目標區域，繼續向目標飛行
+                # 計算方向向量
+                direction_lat = dlat / distance
+                direction_lon = dlon / distance
+                
+                # 移動
+                new_lat = current_lat + direction_lat * move_distance
+                new_lon = current_lon + direction_lon * move_distance
+                
+                new_geo_positions[i] = [new_lat, new_lon]
+            else:
+                # 已到達目標區域，進行優化調整
+                # 在目標區域內進行小幅優化移動
+                step_size = 0.05  # 度
+                test_lat = current_lat + (np.random.rand() - 0.5) * step_size
+                test_lon = current_lon + (np.random.rand() - 0.5) * step_size
+                
+                # 限制在目標區域內
+                test_lat = np.clip(test_lat, self.target_lat_range[0], self.target_lat_range[1])
+                test_lon = np.clip(test_lon, self.target_lon_range[0], self.target_lon_range[1])
+                
+                new_geo_positions[i] = [test_lat, test_lon]
+        
+        # 更新位置
+        self.uav_positions_geo = new_geo_positions
+        self.uav_positions_ecef = self._geo_to_ecef(self.uav_positions_geo)
+        
+        # 計算適應度
+        fitness = self._calculate_fitness(
             ground_terminals, satellite_positions,
             satellite_params, channel_module
         )
         
-        # 2. 簡化的優化策略：在當前位置附近隨機搜索
-        # 嘗試小幅調整位置
-        step_size = 0.1  # 度
-        new_geo_positions = self.uav_positions_geo + (
-            np.random.rand(self.num_uavs, 2) - 0.5
-        ) * step_size
-        
-        # 限制在合理範圍內
-        new_geo_positions[:, 0] = np.clip(
-            new_geo_positions[:, 0], 20.0, 26.0)
-        new_geo_positions[:, 1] = np.clip(
-            new_geo_positions[:, 1], 118.0, 123.0)
-        
-        # 臨時更新位置以測試適應度
-        temp_ecef = self._geo_to_ecef(new_geo_positions)
-        old_ecef = self.uav_positions_ecef.copy()
-        self.uav_positions_ecef = temp_ecef
-        
-        new_fitness = self._calculate_fitness(
-            ground_terminals, satellite_positions,
-            satellite_params, channel_module
-        )
-        
-        # 3. 如果新位置更好，則接受；否則恢復原位置
-        if new_fitness >= current_fitness:
-            self.uav_positions_geo = new_geo_positions
-            # 位置已更新
-        else:
-            self.uav_positions_ecef = old_ecef
-            new_fitness = current_fitness
-        
-        return new_fitness
+        return fitness
     
     def _calculate_fitness(self, ground_terminals, satellite_positions,
                            satellite_params, channel_module):

@@ -70,29 +70,162 @@ function initScene() {
 function createEarth() {
     const geometry = new THREE.SphereGeometry(EARTH_RADIUS, 64, 64);
     
-    // 使用地球紋理（如果有的話），否則使用簡單材質
+    // 載入地球紋理
     const loader = new THREE.TextureLoader();
-    const material = new THREE.MeshPhongMaterial({
-        color: 0x2233ff,
-        emissive: 0x112244,
+    
+    // 使用 NASA 地球紋理（公開可用的資源）
+    // 如果載入失敗，使用備用材質
+    const earthTexture = loader.load(
+        'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg',
+        () => {
+            console.log('地球紋理載入成功');
+        },
+        undefined,
+        (error) => {
+            console.warn('地球紋理載入失敗，使用備用材質:', error);
+        }
+    );
+    
+    const earthMaterial = new THREE.MeshPhongMaterial({
+        map: earthTexture,
+        bumpMap: earthTexture,  // 使用相同紋理作為凹凸貼圖
+        bumpScale: 0.05,
         shininess: 30,
-        transparent: true,
-        opacity: 0.8
+        transparent: false
     });
     
-    earth = new THREE.Mesh(geometry, material);
+    // 如果紋理載入失敗，使用備用材質
+    if (!earthTexture) {
+        earthMaterial.color.setHex(0x2233ff);
+        earthMaterial.emissive.setHex(0x112244);
+    }
+    
+    earth = new THREE.Mesh(geometry, earthMaterial);
     scene.add(earth);
+    
+    // 添加經緯度線
+    createLatLonGrid();
     
     // 添加大氣層效果
     const atmosphereGeometry = new THREE.SphereGeometry(EARTH_RADIUS * 1.02, 64, 64);
     const atmosphereMaterial = new THREE.MeshPhongMaterial({
         color: 0x4488ff,
         transparent: true,
-        opacity: 0.1,
+        opacity: 0.15,
         side: THREE.BackSide
     });
     const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
     scene.add(atmosphere);
+}
+
+// 創建經緯度網格
+function createLatLonGrid() {
+    const gridGroup = new THREE.Group();
+    const gridMaterial = new THREE.LineBasicMaterial({
+        color: 0x444444,
+        transparent: true,
+        opacity: 0.3
+    });
+    
+    // 繪製緯度線（平行線）
+    for (let lat = -90; lat <= 90; lat += 15) {
+        const latRad = THREE.MathUtils.degToRad(lat);
+        const points = [];
+        const segments = 64;
+        
+        for (let i = 0; i <= segments; i++) {
+            const lon = (i / segments) * 360 - 180;
+            const lonRad = THREE.MathUtils.degToRad(lon);
+            
+            const x = EARTH_RADIUS * Math.cos(latRad) * Math.cos(lonRad);
+            const y = EARTH_RADIUS * Math.sin(latRad);
+            const z = EARTH_RADIUS * Math.cos(latRad) * Math.sin(lonRad);
+            
+            points.push(new THREE.Vector3(x, y, z));
+        }
+        
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geometry, gridMaterial);
+        gridGroup.add(line);
+    }
+    
+    // 繪製經度線（子午線）
+    for (let lon = -180; lon <= 180; lon += 15) {
+        const lonRad = THREE.MathUtils.degToRad(lon);
+        const points = [];
+        const segments = 64;
+        
+        for (let i = 0; i <= segments; i++) {
+            const lat = (i / segments) * 180 - 90;
+            const latRad = THREE.MathUtils.degToRad(lat);
+            
+            const x = EARTH_RADIUS * Math.cos(latRad) * Math.cos(lonRad);
+            const y = EARTH_RADIUS * Math.sin(latRad);
+            const z = EARTH_RADIUS * Math.cos(latRad) * Math.sin(lonRad);
+            
+            points.push(new THREE.Vector3(x, y, z));
+        }
+        
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geometry, gridMaterial);
+        gridGroup.add(line);
+    }
+    
+    // 添加主要經緯線（更明顯）
+    const majorGridMaterial = new THREE.LineBasicMaterial({
+        color: 0x666666,
+        transparent: true,
+        opacity: 0.5,
+        linewidth: 2
+    });
+    
+    // 主要緯度線（赤道、回歸線、極圈）
+    const majorLats = [0, 23.5, -23.5, 66.5, -66.5];
+    majorLats.forEach(lat => {
+        const latRad = THREE.MathUtils.degToRad(lat);
+        const points = [];
+        const segments = 128;
+        
+        for (let i = 0; i <= segments; i++) {
+            const lon = (i / segments) * 360 - 180;
+            const lonRad = THREE.MathUtils.degToRad(lon);
+            
+            const x = EARTH_RADIUS * Math.cos(latRad) * Math.cos(lonRad);
+            const y = EARTH_RADIUS * Math.sin(latRad);
+            const z = EARTH_RADIUS * Math.cos(latRad) * Math.sin(lonRad);
+            
+            points.push(new THREE.Vector3(x, y, z));
+        }
+        
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geometry, majorGridMaterial);
+        gridGroup.add(line);
+    });
+    
+    // 主要經度線（本初子午線、180度線）
+    const majorLons = [0, 180];
+    majorLons.forEach(lon => {
+        const lonRad = THREE.MathUtils.degToRad(lon);
+        const points = [];
+        const segments = 128;
+        
+        for (let i = 0; i <= segments; i++) {
+            const lat = (i / segments) * 180 - 90;
+            const latRad = THREE.MathUtils.degToRad(lat);
+            
+            const x = EARTH_RADIUS * Math.cos(latRad) * Math.cos(lonRad);
+            const y = EARTH_RADIUS * Math.sin(latRad);
+            const z = EARTH_RADIUS * Math.cos(latRad) * Math.sin(lonRad);
+            
+            points.push(new THREE.Vector3(x, y, z));
+        }
+        
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geometry, majorGridMaterial);
+        gridGroup.add(line);
+    });
+    
+    scene.add(gridGroup);
 }
 
 // 創建星空背景

@@ -113,15 +113,17 @@ def main():
     satellites = create_sample_satellites()
     print(f"✓ 已創建 {len(satellites)} 顆衛星")
     
-    # 創建無人機蜂群（部署在台灣海峽，靠近台灣西海岸）
-    # 台灣海峽位置：緯度約 23.5-25.0°N，經度約 119.5-120.5°E
+    # 創建無人機蜂群（從中國大陸沿海起飛，飛向台灣）
+    # 起飛區域：福建/廣東沿海，緯度約 23-26°N，經度約 116-119°E
+    # 目標區域：台灣本島
     num_uavs = 8  # 增加無人機數量以模擬更真實的軍事部署
     uav_swarm = UAVSwarm(
         num_uavs,
-        initial_lat_range=(23.5, 25.0),  # 台灣海峽緯度範圍
-        initial_lon_range=(119.5, 120.5),  # 靠近台灣西海岸
-        deployment_pattern='grid')  # 使用網格部署模式
-    print(f"✓ 已創建 {num_uavs} 架無人機（部署在台灣海峽，網格陣型）")
+        initial_lat_range=(23.5, 25.5),  # 中國大陸沿海緯度範圍
+        initial_lon_range=(116.5, 118.5),  # 中國大陸沿海經度範圍（福建/廣東）
+        deployment_pattern='grid',  # 使用網格部署模式
+        target_region=((22.0, 25.3), (119.3, 122.0)))  # 目標：台灣本島
+    print(f"✓ 已創建 {num_uavs} 架無人機（從中國大陸沿海起飛，飛向台灣）")
     
     # 創建地面終端（使用實際台灣位置）
     ground_terminals = create_sample_ground_terminals()
